@@ -1,0 +1,9 @@
+# Linux only: host networking for the worker so mDNS multicast reaches the LAN.
+# A host-networked container can't use service names, so it reaches db/reverb via their published ports.
+services:
+  worker:
+    network_mode: host
+    environment:
+      DB_HOST: 127.0.0.1
+      REVERB_HOST: 127.0.0.1
+      REVERB_PORT: ${REVERB_PUBLIC_PORT:-8081}

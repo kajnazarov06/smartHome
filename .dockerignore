@@ -1,0 +1,11 @@
+.git
+.idea
+backend/vendor
+backend/node_modules
+backend/.env
+backend/database/*.sqlite
+backend/storage/logs/*
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+frontend/node_modules
