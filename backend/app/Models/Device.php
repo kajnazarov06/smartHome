@@ -51,10 +51,10 @@ class Device extends Model
         return $this->hasMany(Reading::class);
     }
 
-    /** @return HasMany<CachedAlarm, $this> */
-    public function cachedAlarms(): HasMany
+    /** @return HasMany<Alarm, $this> */
+    public function alarms(): HasMany
     {
-        return $this->hasMany(CachedAlarm::class)->orderBy('time');
+        return $this->hasMany(Alarm::class)->orderBy('time')->orderBy('id');
     }
 
     public function hasCapability(string $capability): bool

@@ -8,5 +8,8 @@ use Illuminate\Support\Facades\Schedule;
 // Keeps discovered devices fresh and updates paired devices' IPs after DHCP changes.
 Schedule::command('devices:discover')->everyMinute()->withoutOverlapping()->runInBackground();
 
+// Pushes alarm changes saved while a clock was unreachable (the listener also syncs on reconnect).
+Schedule::command('alarms:sync')->everyMinute()->withoutOverlapping();
+
 // History retention (smarthome.history.retention_days, default 30).
 Schedule::command('model:prune', ['--model' => [Reading::class]])->daily();

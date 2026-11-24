@@ -94,7 +94,7 @@ class PairingController extends Controller
                 $this->client->updateSettings($device, ['name' => $name]);
             }
             $this->states->put($device->id, $this->client->state($device));
-            $this->alarms->refresh($device);
+            $this->alarms->sync($device, wait: 0); // adopts alarms already on the clock
         } catch (DeviceException $e) {
             Log::warning('Post-pairing setup failed', ['device' => $device->id, 'error' => $e->getMessage()]);
         }

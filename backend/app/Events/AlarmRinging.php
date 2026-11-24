@@ -14,7 +14,7 @@ class AlarmRinging implements ShouldBroadcastNow
     public function __construct(
         public readonly int $userId,
         public readonly string $deviceId,
-        public readonly int $alarmId,
+        public readonly ?int $alarmId, // null if the clock rings an alarm the backend doesn't know yet
     ) {}
 
     public function broadcastOn(): PrivateChannel

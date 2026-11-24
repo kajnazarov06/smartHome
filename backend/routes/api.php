@@ -34,7 +34,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Devices (owner only; other users' devices answer 404)
     Route::get('devices', [DeviceController::class, 'index']);
-    Route::middleware('can:manage,device')->prefix('devices/{device}')->group(function () {
+    // scopeBindings: {alarm} must belong to {device}, else 404.
+    Route::middleware('can:manage,device')->prefix('devices/{device}')->scopeBindings()->group(function () {
         Route::get('/', [DeviceController::class, 'show']);
         Route::patch('/', [DeviceController::class, 'update']);
         Route::delete('/', [DeviceController::class, 'destroy']);

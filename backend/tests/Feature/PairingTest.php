@@ -61,7 +61,7 @@ class PairingTest extends TestCase
         $this->assertSame(DeviceType::Clock, $device->type);
         $this->assertSame('device-secret-token', $device->token);
         $this->assertNotSame('device-secret-token', DB::table('devices')->value('token'), 'token must be encrypted at rest');
-        $this->assertSame(1, $device->cachedAlarms()->count());
+        $this->assertSame(1, $device->alarms()->where('device_alarm_id', 1)->where('sync_status', 'synced')->count(), 'alarms already on the clock are adopted');
 
         Http::assertSent(fn ($request) => $request->url() === 'http://192.168.1.50/api/settings'
             && $request['name'] === 'Bedroom clock'

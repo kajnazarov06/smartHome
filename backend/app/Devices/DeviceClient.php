@@ -127,6 +127,10 @@ class DeviceClient
             throw DeviceUnreachableException::forHost('(unknown address)');
         }
 
+        // Never log the token, request data (pairing code) or response body (pairing token).
+        $context = ['host' => $host, 'method' => strtoupper($method), 'path' => $path];
+        $startedAt = hrtime(true);
+
         try {
             /** @var Response $response */
             $request = $this->request($host, $token, $timeout);
@@ -134,15 +138,26 @@ class DeviceClient
                 ? $request->{$method}($path)
                 : $request->{$method}($path, $data);
         } catch (ConnectionException $e) {
+            Log::warning('Device unreachable', $context + [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'error' => $e->getMessage(),
+            ]);
+
             throw DeviceUnreachableException::forHost($host, $e);
         }
+
+        $context += ['status' => $response->status(), 'duration_ms' => $this->elapsedMs($startedAt)];
 
         $body = $response->json();
         $body = is_array($body) ? $body : [];
 
         if ($response->failed()) {
+            Log::warning('Device request failed', $context);
+
             throw new DeviceRequestException($response->status(), $body);
         }
+
+        Log::debug('Device request', $context);
 
         $this->checkApiVersion($host, $body);
 
@@ -160,6 +175,11 @@ class DeviceClient
         if ($major !== config('smarthome.device.api_version')) {
             Log::warning('Device API version mismatch', ['host' => $host, 'device' => $version, 'backend' => config('smarthome.device.api_version')]);
         }
+    }
+
+    private function elapsedMs(int $startedAt): int
+    {
+        return (int) round((hrtime(true) - $startedAt) / 1_000_000);
     }
 
     private function unwrapAlarm(array $body): array

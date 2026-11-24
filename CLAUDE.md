@@ -67,6 +67,7 @@ container: `docker run --rm -v "$PWD/backend":/app -w /app composer:2 php artisa
 | `php artisan devices:discover [--subnet=192.168.1.0/24] [--watch]` | Scan the LAN; refreshes paired devices' IPs |
 | `php artisan devices:listen` | Long-running device listener (runs under supervisord in `worker`) |
 | `php artisan model:prune --model="App\Models\Reading"` | History retention (scheduled daily) |
+| `php artisan alarms:sync [--all]` | Queue an alarm sync for online devices with pending changes (scheduled every minute) |
 | `docker compose restart worker` | **Required after changing listener, job or command code** (long-running processes don't reload) |
 | `docker compose logs -f worker` | Listener / queue / scheduler output |
 
@@ -82,7 +83,7 @@ container: `docker run --rm -v "$PWD/backend":/app -w /app composer:2 php artisa
 | Live state cache (shared between web and worker) | `app/Devices/DeviceStateStore.php` |
 | Listener: one WebSocket per device, poll fallback, reconnect backoff | `app/Devices/Listener/DeviceListener.php` (amphp/Revolt) |
 | What to do with device messages (testable, no event loop) | `app/Devices/Listener/DeviceEventHandler.php` |
-| Alarm proxy + `alarms_cache` | `app/Services/AlarmService.php` |
+| Offline-first alarms: save → push now → background sync (`SyncAlarms` job, `alarms:sync`) | `app/Services/AlarmService.php`, `app/Jobs/SyncAlarms.php` |
 | History down-sampling (24 h → 5 min buckets, 7 d → 30 min) | `app/Services/ReadingHistory.php` |
 | Broadcast events (`users.{id}` private channel) | `app/Events/*`, `routes/channels.php` |
 | Routes | `routes/api.php` (API), `routes/console.php` (schedule) |
@@ -104,7 +105,7 @@ container: `docker run --rm -v "$PWD/backend":/app -w /app composer:2 php artisa
 | `users` | `username` **or** `email` (both nullable, unique; at least one required), bcrypt password |
 | `devices` | PK = the device's own ID (string). `token` uses the `encrypted` cast and is `#[Hidden]`. `type` is a string column cast to `App\Enums\DeviceType` (a new type = a new enum case, no migration). `type` + `capabilities` (JSON) drive the UI generically. `settings` JSON = last pushed `{tz, brightness, snooze_min}` |
 | `readings` | One row per device per ≥60 s (written by the listener). Pruned after 30 days (`MassPrunable`) |
-| `alarms_cache` | Read-through copy of the device's alarms. **The device is the source of truth**; never edit this table without the device accepting the change first |
+| `alarms` | The user's alarms (**the DB is the source of truth for user changes**). `id` is the API ID, `device_alarm_id` the clock's (null until it accepted the alarm). `sync_status` (`App\Enums\AlarmSyncStatus`): `synced` / `pending` (not on the clock yet) / `failed` (clock refused; `sync_error {code, message}`). Soft-deleted = delete not confirmed by the clock. `revision` is bumped on every user change; sync writes are conditional on it. Conflicts: pending rows win over the clock, synced rows follow the clock (picks up changes made on the clock itself) |
 
 Online/offline is derived: `Device::isOnline()` = `last_seen_at` newer than `DEVICE_OFFLINE_AFTER` (45 s). The
 listener updates `last_seen_at` every 5 s while a socket is open (ping/pong heartbeat every 10 s drops dead sockets)
@@ -134,8 +135,8 @@ For `curl` testing, send `Origin: http://localhost` and handle the XSRF cookie, 
 | GET | `/devices/{id}/state` | Live fetch from the device |
 | PUT | `/devices/{id}/settings` | `{name?, tz? (IANA), brightness? 0–100, snooze_min? 1–30}` |
 | GET | `/devices/{id}/readings?range=24h\|7d` | Bucketed `{points:[{ts, temperature_c, humidity_pct}]}` |
-| GET/POST | `/devices/{id}/alarms` | GET has `meta.stale=true` when served from cache (device offline). POST `{time "HH:MM", days [1..7] (ISO, 1=Mon; [] = one-shot), enabled?, label?, snooze_min?, sound?, volume?}`; max 10 |
-| PUT/DELETE | `/devices/{id}/alarms/{alarmId}` | Partial update / delete |
+| GET/POST | `/devices/{id}/alarms` | GET reconciles with the clock when it is online; `meta.stale=true` = the clock could not be asked. POST `{time "HH:MM", days [1..7] (ISO, 1=Mon; [] = one-shot), enabled?, label?, snooze_min?, sound?, volume?}`; max 10. Each alarm has `sync_status`, `sync_error`, `synced_at` |
+| PUT/DELETE | `/devices/{id}/alarms/{alarmId}` | Partial update / delete. Writes: 200/201/204 = the clock has it; **202 = saved, `pending`**, pushed when the clock is back; a clock refusal is rolled back and returned (422 `device_rejected`) |
 | POST | `/broadcasting/auth` | Echo private-channel auth |
 
 Other users' devices return **404** (not 403). Device failures return `{message, code}` with `code` one of
@@ -144,7 +145,7 @@ Other users' devices return **404** (not 403). Device failures return `{message,
 
 **Broadcasts** on `private-users.{userId}` (Echo: `Echo.private(`users.${id}`).listen('.device.state', …)`):
 `.device.state {device_id, state}`, `.device.status {device_id, online, last_seen_at}`,
-`.alarm.ringing {device_id, alarm_id}`, `.discovery.finished {devices}`. Note the leading dot (custom `broadcastAs`).
+`.alarm.ringing {device_id, alarm_id}` (API alarm ID, null if unknown), `.alarms.updated {device_id, alarms}` (after a background sync), `.discovery.finished {devices}`. Note the leading dot (custom `broadcastAs`).
 
 ## Device local API contract (ESP32, port 80)
 
@@ -178,8 +179,11 @@ weekdays; `tz` is an IANA name (the firmware maps it to a POSIX TZ string); the 
   do the same job.
 - **mDNS in pure PHP** (`DnsMessage`): no Avahi/`dns-sd` dependency and no ext-sockets. Uses a "legacy unicast"
   query, so responders answer the querying socket directly.
-- **Alarm writes are synchronous**, not queued: the user must see right away if the clock rejected a change. The
-  queue is used for network scans.
+- **Alarms are offline-first.** A change is saved in `alarms`, then pushed to the clock within the request. If the clock
+  is unreachable it stays `pending` and `SyncAlarms` pushes it when the listener sees the clock come online (and
+  `alarms:sync` every minute). Only transient errors (unreachable, 5xx, 408/429) are retried; a refusal during a
+  request is rolled back and returned, in the background it marks the row `failed`. Web and worker push under a
+  per-device cache lock. The device contract is unchanged.
 - Login accepts a username or an email.
 
 ## Best practices for this stack
@@ -260,7 +264,8 @@ weekdays; `tz` is an IANA name (the firmware maps it to a POSIX TZ string); the 
   on every push. Fall back to polling `GET /api/devices` if the socket is down.
 - Render device cards from `type` + `capabilities`, not hard-coded per device type.
 - Handle `code` values from API errors (offline device, invalid pairing code with `attempts_left`, `pairing_locked`
-  with `retry_after`). Show `meta.stale` alarms as read-only "last known".
+  with `retry_after`). Alarms stay editable while the clock is offline: show each alarm's `sync_status` (pending =
+  "waiting for the clock", failed = `sync_error.message`) and apply `.alarms.updated` to the cache.
 
 ### ESP32 firmware (to be built in `firmware/`)
 

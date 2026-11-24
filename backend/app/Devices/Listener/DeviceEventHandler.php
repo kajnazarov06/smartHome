@@ -6,8 +6,11 @@ use App\Devices\DeviceStateStore;
 use App\Events\AlarmRinging;
 use App\Events\DeviceStateUpdated;
 use App\Events\DeviceStatusChanged;
+use App\Jobs\SyncAlarms;
+use App\Models\Alarm;
 use App\Models\Device;
 use App\Models\Reading;
+use Illuminate\Contracts\Bus\Dispatcher as Bus;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -33,6 +36,7 @@ class DeviceEventHandler
     public function __construct(
         private readonly DeviceStateStore $store,
         private readonly Dispatcher $events,
+        private readonly Bus $bus,
     ) {}
 
     public function handleMessage(Device $device, string $raw): void
@@ -63,7 +67,12 @@ class DeviceEventHandler
     {
         $this->touch($device);
         if (isset($message['id'])) {
-            $this->broadcast(new AlarmRinging($device->user_id, $device->id, (int) $message['id']));
+            // The clock reports its own alarm ID; the API exposes ours.
+            $alarmId = Alarm::query()
+                ->where('device_id', $device->id)
+                ->where('device_alarm_id', (int) $message['id'])
+                ->value('id');
+            $this->broadcast(new AlarmRinging($device->user_id, $device->id, $alarmId));
         }
     }
 
@@ -81,6 +90,7 @@ class DeviceEventHandler
         if (($this->online[$device->id] ?? null) !== true) {
             $this->online[$device->id] = true;
             $this->broadcast(new DeviceStatusChanged($device->user_id, $device->id, true, $now->toIso8601String()));
+            $this->queueAlarmSync($device);
         }
     }
 
@@ -127,6 +137,20 @@ class DeviceEventHandler
             'humidity_pct' => is_numeric($humidity) ? (float) $humidity : null,
         ]);
         $this->lastReadingAt[$device->id] = $now->getTimestamp();
+    }
+
+    /** Back online (or listener start): push alarm changes saved meanwhile and pick up the clock's own. */
+    private function queueAlarmSync(Device $device): void
+    {
+        if (! $device->hasCapability('alarm')) {
+            return;
+        }
+
+        try {
+            $this->bus->dispatch(new SyncAlarms($device->id));
+        } catch (Throwable $e) {
+            Log::warning('Could not queue alarm sync', ['device' => $device->id, 'error' => $e->getMessage()]);
+        }
     }
 
     /** Broadcasting must never take the listener down (e.g. while Reverb restarts). */
