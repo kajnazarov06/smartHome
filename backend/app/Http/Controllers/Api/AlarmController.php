@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\AlarmSyncStatus;
+use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AlarmRequest;
 use App\Http\Resources\AlarmResource;
@@ -58,6 +58,6 @@ class AlarmController extends Controller
 
     private function writeStatus(Alarm $alarm, int $synced): int
     {
-        return $alarm->sync_status === AlarmSyncStatus::Synced ? $synced : 202;
+        return $alarm->sync_status === SyncStatus::Synced ? $synced : 202;
     }
 }

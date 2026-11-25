@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Enums\AlarmSyncStatus;
+use App\Enums\SyncStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * A soft-deleted row is a deletion the clock has not confirmed yet.
  *
- * @property AlarmSyncStatus $sync_status
+ * @property SyncStatus $sync_status
  * @property array{code:string,message:string}|null $sync_error
  */
 #[Fillable(['device_id', 'device_alarm_id', 'time', 'days', 'enabled', 'label', 'extra', 'sync_status', 'sync_error', 'revision', 'synced_at'])]
@@ -32,7 +32,7 @@ class Alarm extends Model
             'days' => 'array',
             'enabled' => 'boolean',
             'extra' => 'array',
-            'sync_status' => AlarmSyncStatus::class,
+            'sync_status' => SyncStatus::class,
             'sync_error' => 'array',
             'revision' => 'integer',
             'synced_at' => 'datetime',

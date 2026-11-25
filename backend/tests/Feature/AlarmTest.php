@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Enums\AlarmSyncStatus;
+use App\Enums\SyncStatus;
 use App\Events\AlarmsUpdated;
 use App\Jobs\SyncAlarms;
 use App\Models\Alarm;
@@ -33,7 +33,7 @@ class AlarmTest extends TestCase
     {
         return Alarm::query()->create([
             'device_id' => $this->device->id, 'device_alarm_id' => 2, 'time' => '07:00', 'days' => [1], 'enabled' => true,
-            'sync_status' => AlarmSyncStatus::Synced, 'synced_at' => now(), ...$attributes,
+            'sync_status' => SyncStatus::Synced, 'synced_at' => now(), ...$attributes,
         ]);
     }
 
@@ -168,7 +168,7 @@ class AlarmTest extends TestCase
             ->assertUnprocessable()
             ->assertJson(['code' => 'device_rejected', 'message' => 'unsupported sound']);
         $this->assertNull($alarm->fresh()->extra);
-        $this->assertSame(AlarmSyncStatus::Synced, $alarm->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Synced, $alarm->fresh()->sync_status);
 
         $this->actingAs($this->device->user)->postJson($this->url(), ['time' => '07:00', 'days' => []])->assertUnprocessable();
         $this->assertDatabaseCount('alarms', 1);
@@ -215,9 +215,9 @@ class AlarmTest extends TestCase
     public function test_sync_pushes_pending_changes_when_the_clock_is_back(): void
     {
         Event::fake([AlarmsUpdated::class]);
-        $create = $this->alarm(['device_alarm_id' => null, 'time' => '06:00', 'sync_status' => AlarmSyncStatus::Pending]);
-        $update = $this->alarm(['device_alarm_id' => 2, 'time' => '07:30', 'sync_status' => AlarmSyncStatus::Pending, 'revision' => 2]);
-        $delete = $this->alarm(['device_alarm_id' => 3, 'sync_status' => AlarmSyncStatus::Pending]);
+        $create = $this->alarm(['device_alarm_id' => null, 'time' => '06:00', 'sync_status' => SyncStatus::Pending]);
+        $update = $this->alarm(['device_alarm_id' => 2, 'time' => '07:30', 'sync_status' => SyncStatus::Pending, 'revision' => 2]);
+        $delete = $this->alarm(['device_alarm_id' => 3, 'sync_status' => SyncStatus::Pending]);
         $delete->delete();
         Http::fake([
             self::CLOCK.'/api/alarms/2' => Http::response(['id' => 2]),
@@ -238,16 +238,16 @@ class AlarmTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r['time'] === '07:30');
         Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && str_ends_with($r->url(), '/api/alarms/3'));
         $this->assertSame(8, $create->fresh()->device_alarm_id);
-        $this->assertSame(AlarmSyncStatus::Synced, $create->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Synced, $create->fresh()->sync_status);
         $this->assertSame('07:30', $update->fresh()->time, 'a pending change wins over the clock');
-        $this->assertSame(AlarmSyncStatus::Synced, $update->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Synced, $update->fresh()->sync_status);
         $this->assertDatabaseMissing('alarms', ['id' => $delete->id]);
         Event::assertDispatched(AlarmsUpdated::class, fn ($e) => $e->deviceId === $this->device->id && count($e->alarms) === 2);
     }
 
     public function test_sync_adopts_a_create_whose_answer_was_lost(): void
     {
-        $alarm = $this->alarm(['device_alarm_id' => null, 'time' => '06:00', 'days' => [], 'sync_status' => AlarmSyncStatus::Pending]);
+        $alarm = $this->alarm(['device_alarm_id' => null, 'time' => '06:00', 'days' => [], 'sync_status' => SyncStatus::Pending]);
         Http::fake([
             self::CLOCK.'/api/alarms/5' => Http::response(['id' => 5]),
             self::CLOCK.'/api/alarms' => Http::response(['alarms' => [['id' => 5, 'time' => '06:00', 'days' => [], 'enabled' => true]]]),
@@ -262,10 +262,10 @@ class AlarmTest extends TestCase
 
     public function test_sync_marks_a_refused_change_failed_and_keeps_going(): void
     {
-        $refused = $this->alarm(['device_alarm_id' => 2, 'sync_status' => AlarmSyncStatus::Pending]);
-        $refusedDelete = $this->alarm(['device_alarm_id' => 3, 'sync_status' => AlarmSyncStatus::Pending]);
+        $refused = $this->alarm(['device_alarm_id' => 2, 'sync_status' => SyncStatus::Pending]);
+        $refusedDelete = $this->alarm(['device_alarm_id' => 3, 'sync_status' => SyncStatus::Pending]);
         $refusedDelete->delete();
-        $fine = $this->alarm(['device_alarm_id' => 4, 'time' => '09:00', 'sync_status' => AlarmSyncStatus::Pending]);
+        $fine = $this->alarm(['device_alarm_id' => 4, 'time' => '09:00', 'sync_status' => SyncStatus::Pending]);
         Http::fake([
             self::CLOCK.'/api/alarms/2' => Http::response(['error' => 'bad sound'], 400),
             self::CLOCK.'/api/alarms/3' => Http::response(['error' => 'busy ringing'], 409),
@@ -279,25 +279,25 @@ class AlarmTest extends TestCase
 
         SyncAlarms::dispatchSync($this->device->id);
 
-        $this->assertSame(AlarmSyncStatus::Failed, $refused->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Failed, $refused->fresh()->sync_status);
         $this->assertSame(['code' => 'device_rejected', 'message' => 'bad sound'], $refused->fresh()->sync_error);
         $this->assertNull($refusedDelete->fresh()->deleted_at, 'a refused delete becomes visible again');
-        $this->assertSame(AlarmSyncStatus::Synced, $fine->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Synced, $fine->fresh()->sync_status);
     }
 
     public function test_sync_leaves_changes_pending_while_the_clock_is_unreachable(): void
     {
-        $alarm = $this->alarm(['sync_status' => AlarmSyncStatus::Pending]);
+        $alarm = $this->alarm(['sync_status' => SyncStatus::Pending]);
         Http::fake(['*' => Http::failedConnection()]);
 
         SyncAlarms::dispatchSync($this->device->id);
 
-        $this->assertSame(AlarmSyncStatus::Pending, $alarm->fresh()->sync_status);
+        $this->assertSame(SyncStatus::Pending, $alarm->fresh()->sync_status);
     }
 
     public function test_sync_does_not_overwrite_a_newer_user_change(): void
     {
-        $alarm = $this->alarm(['time' => '07:30', 'sync_status' => AlarmSyncStatus::Pending]);
+        $alarm = $this->alarm(['time' => '07:30', 'sync_status' => SyncStatus::Pending]);
         Http::fake([
             self::CLOCK.'/api/alarms' => Http::response(['alarms' => [['id' => 2, 'time' => '07:00', 'days' => [1], 'enabled' => true]]]),
             // The user edits the alarm while the clock is answering the sync's PUT.
@@ -311,17 +311,17 @@ class AlarmTest extends TestCase
         SyncAlarms::dispatchSync($this->device->id);
 
         $this->assertSame('08:00', $alarm->fresh()->time);
-        $this->assertSame(AlarmSyncStatus::Pending, $alarm->fresh()->sync_status, 'the newer revision still has to be pushed');
+        $this->assertSame(SyncStatus::Pending, $alarm->fresh()->sync_status, 'the newer revision still has to be pushed');
     }
 
     public function test_command_queues_online_devices_with_pending_changes(): void
     {
         Queue::fake();
-        $this->alarm(['sync_status' => AlarmSyncStatus::Pending]);
+        $this->alarm(['sync_status' => SyncStatus::Pending]);
         $offline = Device::factory()->offline()->create();
         Alarm::query()->create(['device_id' => $offline->id, 'time' => '07:00', 'days' => []]);
         $synced = Device::factory()->create();
-        Alarm::query()->create(['device_id' => $synced->id, 'time' => '07:00', 'days' => [], 'sync_status' => AlarmSyncStatus::Synced]);
+        Alarm::query()->create(['device_id' => $synced->id, 'time' => '07:00', 'days' => [], 'sync_status' => SyncStatus::Synced]);
 
         $this->artisan('alarms:sync')->assertSuccessful();
 

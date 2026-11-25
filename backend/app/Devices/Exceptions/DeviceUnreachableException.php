@@ -21,4 +21,9 @@ class DeviceUnreachableException extends DeviceException
     {
         return 503;
     }
+
+    public function isTransient(): bool
+    {
+        return true;
+    }
 }

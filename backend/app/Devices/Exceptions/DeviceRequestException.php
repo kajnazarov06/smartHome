@@ -36,6 +36,11 @@ class DeviceRequestException extends DeviceException
         };
     }
 
+    public function isTransient(): bool
+    {
+        return $this->deviceStatus >= 500 || $this->deviceStatus === 429 || $this->deviceStatus === 408;
+    }
+
     public function retryAfter(): ?int
     {
         $value = $this->body['retry_after'] ?? $this->body['retry_after_s'] ?? null;

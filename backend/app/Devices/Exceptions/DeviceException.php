@@ -11,4 +11,10 @@ abstract class DeviceException extends RuntimeException
 
     /** HTTP status the backend answers with. */
     abstract public function status(): int;
+
+    /** Worth retrying later (the clock was unreachable, busy, or failed internally), unlike a refusal. */
+    public function isTransient(): bool
+    {
+        return false;
+    }
 }

@@ -11,5 +11,8 @@ Schedule::command('devices:discover')->everyMinute()->withoutOverlapping()->runI
 // Pushes alarm changes saved while a clock was unreachable (the listener also syncs on reconnect).
 Schedule::command('alarms:sync')->everyMinute()->withoutOverlapping();
 
+// Pushes settings (name, tz, brightness, snooze) saved while a clock was unreachable.
+Schedule::command('settings:sync')->everyMinute()->withoutOverlapping();
+
 // History retention (smarthome.history.retention_days, default 30).
 Schedule::command('model:prune', ['--model' => [Reading::class]])->daily();

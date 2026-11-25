@@ -4,24 +4,25 @@ namespace App\Http\Controllers\Api;
 
 use App\Devices\DeviceClient;
 use App\Devices\DeviceStateStore;
-use App\Devices\Exceptions\DeviceException;
 use App\Devices\Exceptions\DeviceRequestException;
 use App\Devices\Exceptions\DeviceUnreachableException;
+use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeviceSettingsRequest;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
+use App\Services\DeviceSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Log;
 
 class DeviceController extends Controller
 {
     public function __construct(
         private readonly DeviceClient $client,
         private readonly DeviceStateStore $states,
+        private readonly DeviceSettingsService $settings,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -34,19 +35,12 @@ class DeviceController extends Controller
         return DeviceResource::make($device);
     }
 
-    /** Rename. Saved locally even if the device is offline; pushed to the device when it is reachable. */
-    public function update(Request $request, Device $device): DeviceResource
+    /** Rename. Same offline-first flow as `updateSettings`. */
+    public function update(Request $request, Device $device): JsonResponse
     {
         $data = $request->validate(['name' => ['required', 'string', 'min:1', 'max:64']]);
-        $device->update($data);
 
-        try {
-            $this->client->updateSettings($device, ['name' => $data['name']]);
-        } catch (DeviceException $e) {
-            Log::info('Rename not pushed to device', ['device' => $device->id, 'error' => $e->getMessage()]);
-        }
-
-        return DeviceResource::make($device);
+        return $this->settingsResponse($this->settings->update($device, $data));
     }
 
     /** Live state straight from the device (the dashboard normally relies on broadcasts instead). */
@@ -58,16 +52,20 @@ class DeviceController extends Controller
         return response()->json(['data' => $state]);
     }
 
-    public function updateSettings(DeviceSettingsRequest $request, Device $device): DeviceResource
+    /**
+     * Saved first, then pushed to the clock when it is reachable. 200 = the clock has it;
+     * 202 = saved, `settings_sync_status: pending`, pushed when the clock is back.
+     * A change the clock refuses is rolled back and its error returned (422 device_rejected).
+     */
+    public function updateSettings(DeviceSettingsRequest $request, Device $device): JsonResponse
     {
-        $settings = $request->validated();
-        $this->client->updateSettings($device, $settings);
+        return $this->settingsResponse($this->settings->update($device, $request->validated()));
+    }
 
-        $device->name = $settings['name'] ?? $device->name;
-        $device->settings = array_merge($device->settings ?? [], array_diff_key($settings, ['name' => true]));
-        $device->save();
-
-        return DeviceResource::make($device);
+    private function settingsResponse(Device $device): JsonResponse
+    {
+        return DeviceResource::make($device)->response()
+            ->setStatusCode($device->settings_sync_status === SyncStatus::Synced ? 200 : 202);
     }
 
     /**

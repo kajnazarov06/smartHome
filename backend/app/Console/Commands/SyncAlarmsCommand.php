@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\AlarmSyncStatus;
+use App\Enums\SyncStatus;
 use App\Jobs\SyncAlarms;
 use App\Models\Device;
 use Illuminate\Console\Attributes\Description;
@@ -19,7 +19,7 @@ class SyncAlarmsCommand extends Command
             ->where('last_seen_at', '>', now()->subSeconds(config('smarthome.device.offline_after')))
             ->unless($this->option('all'), fn ($query) => $query->whereHas(
                 'alarms',
-                fn ($alarms) => $alarms->withTrashed()->where('sync_status', AlarmSyncStatus::Pending),
+                fn ($alarms) => $alarms->withTrashed()->where('sync_status', SyncStatus::Pending),
             ))
             ->pluck('id');
 

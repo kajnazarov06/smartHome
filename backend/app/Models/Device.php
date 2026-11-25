@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\DeviceType;
+use App\Enums\SyncStatus;
 use Database\Factories\DeviceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,6 +20,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property DeviceType $type
  * @property string $token Plain device token (decrypted by the cast). Never serialise it.
  * @property list<string> $capabilities
+ * @property array{tz?:string,brightness?:int,snooze_min?:int}|null $settings desired settings (with `name`, pushed by DeviceSettingsService)
+ * @property SyncStatus $settings_sync_status
+ * @property array{code:string,message:string}|null $settings_sync_error
  */
 #[Table(keyType: 'string', incrementing: false)]
 #[Fillable(['id', 'user_id', 'type', 'name', 'token', 'last_ip', 'fw_version', 'mac', 'capabilities', 'settings', 'last_seen_at'])]
@@ -28,6 +32,8 @@ class Device extends Model
     /** @use HasFactory<DeviceFactory> */
     use HasFactory;
 
+    protected $attributes = ['settings_sync_status' => 'synced', 'settings_revision' => 1];
+
     protected function casts(): array
     {
         return [
@@ -36,6 +42,10 @@ class Device extends Model
             'capabilities' => 'array',
             'settings' => 'array',
             'last_seen_at' => 'datetime',
+            'settings_sync_status' => SyncStatus::class,
+            'settings_sync_error' => 'array',
+            'settings_revision' => 'integer',
+            'settings_synced_at' => 'datetime',
         ];
     }
 
@@ -55,6 +65,12 @@ class Device extends Model
     public function alarms(): HasMany
     {
         return $this->hasMany(Alarm::class)->orderBy('time')->orderBy('id');
+    }
+
+    /** The settings the clock should hold, in the device API shape (`PUT /api/settings`). */
+    public function toSettingsPayload(): array
+    {
+        return ['name' => $this->name, ...($this->settings ?? [])];
     }
 
     public function hasCapability(string $capability): bool

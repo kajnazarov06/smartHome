@@ -7,6 +7,7 @@ use App\Events\AlarmRinging;
 use App\Events\DeviceStateUpdated;
 use App\Events\DeviceStatusChanged;
 use App\Jobs\SyncAlarms;
+use App\Jobs\SyncDeviceSettings;
 use App\Models\Alarm;
 use App\Models\Device;
 use App\Models\Reading;
@@ -90,7 +91,7 @@ class DeviceEventHandler
         if (($this->online[$device->id] ?? null) !== true) {
             $this->online[$device->id] = true;
             $this->broadcast(new DeviceStatusChanged($device->user_id, $device->id, true, $now->toIso8601String()));
-            $this->queueAlarmSync($device);
+            $this->queueSync($device);
         }
     }
 
@@ -139,17 +140,23 @@ class DeviceEventHandler
         $this->lastReadingAt[$device->id] = $now->getTimestamp();
     }
 
-    /** Back online (or listener start): push alarm changes saved meanwhile and pick up the clock's own. */
-    private function queueAlarmSync(Device $device): void
+    /**
+     * Back online (or listener start): push settings and alarm changes saved meanwhile and pick up
+     * the clock's own alarm changes.
+     */
+    private function queueSync(Device $device): void
     {
-        if (! $device->hasCapability('alarm')) {
-            return;
+        $jobs = [new SyncDeviceSettings($device->id)];
+        if ($device->hasCapability('alarm')) {
+            $jobs[] = new SyncAlarms($device->id);
         }
 
-        try {
-            $this->bus->dispatch(new SyncAlarms($device->id));
-        } catch (Throwable $e) {
-            Log::warning('Could not queue alarm sync', ['device' => $device->id, 'error' => $e->getMessage()]);
+        foreach ($jobs as $job) {
+            try {
+                $this->bus->dispatch($job);
+            } catch (Throwable $e) {
+                Log::warning('Could not queue sync', ['device' => $device->id, 'job' => $job::class, 'error' => $e->getMessage()]);
+            }
         }
     }
 

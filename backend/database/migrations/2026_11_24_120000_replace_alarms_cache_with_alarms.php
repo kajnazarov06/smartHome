@@ -22,7 +22,7 @@ return new class extends Migration
             $table->boolean('enabled')->default(true);
             $table->string('label', 64)->nullable();
             $table->json('extra')->nullable(); // optional hardware-dependent fields (snooze_min, sound, volume)
-            $table->string('sync_status', 16)->default('pending'); // App\Enums\AlarmSyncStatus
+            $table->string('sync_status', 16)->default('pending'); // App\Enums\SyncStatus
             $table->json('sync_error')->nullable(); // {code, message} of the last refusal
             $table->unsignedInteger('revision')->default(1); // bumped on every user change; guards against stale sync writes
             $table->timestamp('synced_at')->nullable();

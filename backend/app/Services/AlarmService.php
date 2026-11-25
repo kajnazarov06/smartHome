@@ -5,8 +5,7 @@ namespace App\Services;
 use App\Devices\DeviceClient;
 use App\Devices\Exceptions\DeviceException;
 use App\Devices\Exceptions\DeviceRequestException;
-use App\Devices\Exceptions\DeviceUnreachableException;
-use App\Enums\AlarmSyncStatus;
+use App\Enums\SyncStatus;
 use App\Models\Alarm;
 use App\Models\Device;
 use Closure;
@@ -82,7 +81,7 @@ class AlarmService
 
         $alarm->forceFill([
             ...$this->normalizedFields([...$current, ...$data]),
-            'sync_status' => AlarmSyncStatus::Pending,
+            'sync_status' => SyncStatus::Pending,
             'sync_error' => null,
             'revision' => $alarm->revision + 1,
         ])->save();
@@ -96,7 +95,7 @@ class AlarmService
         $original = $alarm->only(['sync_status', 'sync_error']);
 
         $alarm->forceFill([
-            'sync_status' => AlarmSyncStatus::Pending,
+            'sync_status' => SyncStatus::Pending,
             'sync_error' => null,
             'revision' => $alarm->revision + 1,
         ])->save();
@@ -142,7 +141,7 @@ class AlarmService
     {
         return Alarm::withTrashed()
             ->where('device_id', $device->id)
-            ->where('sync_status', AlarmSyncStatus::Pending)
+            ->where('sync_status', SyncStatus::Pending)
             ->exists();
     }
 
@@ -169,9 +168,9 @@ class AlarmService
             $onClock = $alarm->device_alarm_id !== null ? $remote->get($alarm->device_alarm_id) : null;
 
             match ($alarm->sync_status) {
-                AlarmSyncStatus::Pending => $this->pushInSync($device, $alarm),
-                AlarmSyncStatus::Synced => $this->followClock($alarm, $onClock),
-                AlarmSyncStatus::Failed => null, // waits for the user to edit or delete it
+                SyncStatus::Pending => $this->pushInSync($device, $alarm),
+                SyncStatus::Synced => $this->followClock($alarm, $onClock),
+                SyncStatus::Failed => null, // waits for the user to edit or delete it
             };
         }
 
@@ -182,7 +181,7 @@ class AlarmService
                     ...$this->normalizedFields($alarm),
                     'device_id' => $device->id,
                     'device_alarm_id' => $id,
-                    'sync_status' => AlarmSyncStatus::Synced,
+                    'sync_status' => SyncStatus::Synced,
                     'synced_at' => now(),
                 ]);
             }
@@ -194,7 +193,7 @@ class AlarmService
     {
         $unchanged = Alarm::query()->whereKey($alarm->id)
             ->where('revision', $alarm->revision)
-            ->where('sync_status', AlarmSyncStatus::Synced);
+            ->where('sync_status', SyncStatus::Synced);
 
         if ($onClock === null) {
             $unchanged->forceDelete(); // deleted on the clock
@@ -219,7 +218,7 @@ class AlarmService
         try {
             $this->push($device, $alarm);
         } catch (DeviceException $e) {
-            if ($this->isTransient($e)) {
+            if ($e->isTransient()) {
                 throw $e;
             }
             $this->markFailed($alarm, $e);
@@ -241,7 +240,7 @@ class AlarmService
             } catch (LockTimeoutException) {
                 // A sync is running and will pick the change up, or the next one will.
             } catch (DeviceException $e) {
-                if (! $this->isTransient($e)) {
+                if (! $e->isTransient()) {
                     $revert();
                     throw $e;
                 }
@@ -302,7 +301,7 @@ class AlarmService
         }
 
         Alarm::withTrashed()->whereKey($alarm->id)->where('revision', $revision)->update([
-            'sync_status' => AlarmSyncStatus::Synced,
+            'sync_status' => SyncStatus::Synced,
             'sync_error' => null,
             'synced_at' => now(),
         ]);
@@ -311,7 +310,7 @@ class AlarmService
     private function markFailed(Alarm $alarm, DeviceException $e): void
     {
         $changed = Alarm::withTrashed()->whereKey($alarm->id)->where('revision', $alarm->revision)->update([
-            'sync_status' => AlarmSyncStatus::Failed,
+            'sync_status' => SyncStatus::Failed,
             'sync_error' => json_encode(['code' => $e->errorCode(), 'message' => $e->getMessage()]),
             // A refused delete must become visible again, or the alarm would ring with no way to see it.
             'deleted_at' => null,
@@ -320,13 +319,6 @@ class AlarmService
         if ($changed) {
             Log::warning('Clock refused an alarm change', ['device' => $alarm->device_id, 'alarm' => $alarm->id, 'code' => $e->errorCode()]);
         }
-    }
-
-    /** Worth retrying later: the clock was unreachable, busy, or failed internally. */
-    private function isTransient(DeviceException $e): bool
-    {
-        return $e instanceof DeviceUnreachableException
-            || ($e instanceof DeviceRequestException && ($e->deviceStatus >= 500 || $e->deviceStatus === 429 || $e->deviceStatus === 408));
     }
 
     private function lockKey(Device $device): string

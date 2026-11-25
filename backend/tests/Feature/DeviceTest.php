@@ -65,7 +65,8 @@ class DeviceTest extends TestCase
         $device = Device::factory()->create();
         Http::fake(['*' => Http::failedConnection()]);
 
-        $this->actingAs($device->user)->patchJson("/api/devices/{$device->id}", ['name' => 'Kitchen'])->assertOk();
+        $this->actingAs($device->user)->patchJson("/api/devices/{$device->id}", ['name' => 'Kitchen'])
+            ->assertAccepted()->assertJsonPath('data.settings_sync_status', 'pending');
         $this->assertSame('Kitchen', $device->fresh()->name);
     }
 
@@ -76,7 +77,7 @@ class DeviceTest extends TestCase
 
         $this->actingAs($device->user)->putJson("/api/devices/{$device->id}/settings", [
             'tz' => 'Asia/Ho_Chi_Minh', 'brightness' => 40, 'snooze_min' => 9,
-        ])->assertOk()->assertJsonPath('data.settings.brightness', 40);
+        ])->assertOk()->assertJsonPath('data.settings.brightness', 40)->assertJsonPath('data.settings_sync_status', 'synced');
 
         $this->actingAs($device->user)->putJson("/api/devices/{$device->id}/settings", ['tz' => 'Mars/Base'])
             ->assertJsonValidationErrors('tz');
