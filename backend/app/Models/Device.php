@@ -4,10 +4,13 @@ namespace App\Models;
 
 use App\Enums\DeviceType;
 use App\Enums\SyncStatus;
+use Carbon\CarbonInterface;
 use Database\Factories\DeviceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Attributes\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -80,7 +83,18 @@ class Device extends Model
 
     public function isOnline(): bool
     {
-        return $this->last_seen_at !== null
-            && $this->last_seen_at->gt(now()->subSeconds(config('smarthome.device.offline_after')));
+        return $this->last_seen_at !== null && $this->last_seen_at->gt(self::offlineCutoff());
+    }
+
+    /** Devices heard from within `smarthome.device.offline_after` seconds (same rule as isOnline()). */
+    #[Scope]
+    protected function online(Builder $query): void
+    {
+        $query->where('last_seen_at', '>', self::offlineCutoff());
+    }
+
+    private static function offlineCutoff(): CarbonInterface
+    {
+        return now()->subSeconds(config('smarthome.device.offline_after'));
     }
 }

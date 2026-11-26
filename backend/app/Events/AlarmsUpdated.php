@@ -2,7 +2,6 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 
@@ -12,7 +11,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  */
 class AlarmsUpdated implements ShouldBroadcastNow
 {
-    use Dispatchable;
+    use BroadcastsToUser, Dispatchable;
 
     /** @param list<array> $alarms AlarmResource arrays */
     public function __construct(
@@ -20,11 +19,6 @@ class AlarmsUpdated implements ShouldBroadcastNow
         public readonly string $deviceId,
         public readonly array $alarms,
     ) {}
-
-    public function broadcastOn(): PrivateChannel
-    {
-        return new PrivateChannel("users.{$this->userId}");
-    }
 
     public function broadcastAs(): string
     {

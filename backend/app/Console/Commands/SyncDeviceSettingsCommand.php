@@ -17,7 +17,7 @@ class SyncDeviceSettingsCommand extends Command
     {
         $devices = Device::query()
             ->where('settings_sync_status', SyncStatus::Pending)
-            ->where('last_seen_at', '>', now()->subSeconds(config('smarthome.device.offline_after')))
+            ->online()
             ->pluck('id');
 
         foreach ($devices as $id) {

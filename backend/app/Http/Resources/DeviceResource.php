@@ -30,14 +30,22 @@ class DeviceResource extends JsonResource
             'last_ip' => $this->last_ip,
             'online' => $this->isOnline(),
             'last_seen_at' => $this->last_seen_at?->toIso8601String(),
+            ...$this->settingsFields(),
+            'state' => $state,
+            'next_alarm' => $state['next_alarm'] ?? null,
+            'created_at' => $this->created_at?->toIso8601String(),
+        ];
+    }
+
+    /** Desired settings and their sync status; also broadcast as `.device.settings`. */
+    public function settingsFields(): array
+    {
+        return [
             'settings' => $this->settings ?? (object) [],
             // synced / pending (waiting for the clock) / failed (refused; see settings_sync_error)
             'settings_sync_status' => $this->settings_sync_status->value,
             'settings_sync_error' => $this->settings_sync_error,
             'settings_synced_at' => $this->settings_synced_at?->toIso8601String(),
-            'state' => $state ?? null,
-            'next_alarm' => $state['next_alarm'] ?? null,
-            'created_at' => $this->created_at?->toIso8601String(),
         ];
     }
 }

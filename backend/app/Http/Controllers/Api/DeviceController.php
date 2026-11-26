@@ -8,6 +8,7 @@ use App\Devices\Exceptions\DeviceRequestException;
 use App\Devices\Exceptions\DeviceUnreachableException;
 use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DeviceRenameRequest;
 use App\Http\Requests\DeviceSettingsRequest;
 use App\Http\Resources\DeviceResource;
 use App\Models\Device;
@@ -36,11 +37,9 @@ class DeviceController extends Controller
     }
 
     /** Rename. Same offline-first flow as `updateSettings`. */
-    public function update(Request $request, Device $device): JsonResponse
+    public function update(DeviceRenameRequest $request, Device $device): JsonResponse
     {
-        $data = $request->validate(['name' => ['required', 'string', 'min:1', 'max:64']]);
-
-        return $this->settingsResponse($this->settings->update($device, $data));
+        return $this->settingsResponse($this->settings->update($device, $request->validated()));
     }
 
     /** Live state straight from the device (the dashboard normally relies on broadcasts instead). */
@@ -83,7 +82,7 @@ class DeviceController extends Controller
             }
         } catch (DeviceRequestException $e) {
             // 401/403: the device already forgot us (e.g. after a factory reset). Anything else is a real error.
-            if (! in_array($e->deviceStatus, [401, 403], true) && ! $request->boolean('force')) {
+            if (! $e->isUnauthorized() && ! $request->boolean('force')) {
                 throw $e;
             }
         }

@@ -103,7 +103,7 @@ class MdnsBrowser
             $devices[$id] = new DiscoveredDevice(
                 id: $id,
                 host: $ip,
-                type: $txt['type'] ?? 'clock',
+                type: $txt['type'] ?? DiscoveredDevice::DEFAULT_TYPE,
                 name: $this->instanceLabel($label, $service),
                 fw: $txt['fw'] ?? null,
                 paired: ($txt['paired'] ?? '0') === '1',

@@ -328,4 +328,16 @@ class AlarmTest extends TestCase
         Queue::assertPushed(SyncAlarms::class, 1);
         Queue::assertPushed(SyncAlarms::class, fn ($job) => $job->deviceId === $this->device->id);
     }
+
+    public function test_a_device_holds_at_most_the_configured_number_of_alarms(): void
+    {
+        foreach (range(1, config('smarthome.device.max_alarms')) as $i) {
+            $this->alarm(['device_alarm_id' => $i]);
+        }
+
+        // No Http::fake: the clock must not be called.
+        $this->actingAs($this->device->user)->postJson($this->url(), ['time' => '07:00', 'days' => []])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('alarms');
+    }
 }

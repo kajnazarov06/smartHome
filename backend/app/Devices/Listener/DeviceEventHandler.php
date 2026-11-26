@@ -11,8 +11,8 @@ use App\Jobs\SyncDeviceSettings;
 use App\Models\Alarm;
 use App\Models\Device;
 use App\Models\Reading;
+use App\Support\SafeBroadcast;
 use Illuminate\Contracts\Bus\Dispatcher as Bus;
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -36,7 +36,6 @@ class DeviceEventHandler
 
     public function __construct(
         private readonly DeviceStateStore $store,
-        private readonly Dispatcher $events,
         private readonly Bus $bus,
     ) {}
 
@@ -61,7 +60,7 @@ class DeviceEventHandler
         $this->touch($device);
         $state = $this->store->put($device->id, $state);
         $this->recordReadingIfDue($device, $state);
-        $this->broadcast(new DeviceStateUpdated($device->user_id, $device->id, $state));
+        SafeBroadcast::dispatch(new DeviceStateUpdated($device->user_id, $device->id, $state));
     }
 
     public function handleAlarmRinging(Device $device, array $message): void
@@ -73,7 +72,7 @@ class DeviceEventHandler
                 ->where('device_id', $device->id)
                 ->where('device_alarm_id', (int) $message['id'])
                 ->value('id');
-            $this->broadcast(new AlarmRinging($device->user_id, $device->id, $alarmId));
+            SafeBroadcast::dispatch(new AlarmRinging($device->user_id, $device->id, $alarmId));
         }
     }
 
@@ -90,7 +89,7 @@ class DeviceEventHandler
 
         if (($this->online[$device->id] ?? null) !== true) {
             $this->online[$device->id] = true;
-            $this->broadcast(new DeviceStatusChanged($device->user_id, $device->id, true, $now->toIso8601String()));
+            SafeBroadcast::dispatch(new DeviceStatusChanged($device->user_id, $device->id, true, $now->toIso8601String()));
             $this->queueSync($device);
         }
     }
@@ -101,7 +100,7 @@ class DeviceEventHandler
         foreach ($devices as $device) {
             if (! $device->isOnline() && ($this->online[$device->id] ?? null) !== false) {
                 $this->online[$device->id] = false;
-                $this->broadcast(new DeviceStatusChanged(
+                SafeBroadcast::dispatch(new DeviceStatusChanged(
                     $device->user_id, $device->id, false, $device->last_seen_at?->toIso8601String(),
                 ));
             }
@@ -157,16 +156,6 @@ class DeviceEventHandler
             } catch (Throwable $e) {
                 Log::warning('Could not queue sync', ['device' => $device->id, 'job' => $job::class, 'error' => $e->getMessage()]);
             }
-        }
-    }
-
-    /** Broadcasting must never take the listener down (e.g. while Reverb restarts). */
-    private function broadcast(object $event): void
-    {
-        try {
-            $this->events->dispatch($event);
-        } catch (Throwable $e) {
-            Log::warning('Broadcast failed', ['event' => $event::class, 'error' => $e->getMessage()]);
         }
     }
 }

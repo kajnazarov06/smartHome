@@ -12,6 +12,12 @@ abstract class DeviceException extends RuntimeException
     /** HTTP status the backend answers with. */
     abstract public function status(): int;
 
+    /** `{code, message}`: the API error body and the stored `sync_error`. */
+    public function toArray(): array
+    {
+        return ['code' => $this->errorCode(), 'message' => $this->getMessage()];
+    }
+
     /** Worth retrying later (the clock was unreachable, busy, or failed internally), unlike a refusal. */
     public function isTransient(): bool
     {

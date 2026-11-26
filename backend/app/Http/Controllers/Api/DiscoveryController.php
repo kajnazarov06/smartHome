@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ScanNetwork;
 use App\Models\Device;
 use App\Rules\LanHost;
+use App\Rules\Subnet;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -31,7 +32,7 @@ class DiscoveryController extends Controller
     public function scan(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'subnet' => ['sometimes', 'nullable', 'string', 'regex:#^\d{1,3}(\.\d{1,3}){3}/(2[2-9]|3[0-2])$#'],
+            'subnet' => ['sometimes', 'nullable', 'string', new Subnet],
         ]);
 
         ScanNetwork::dispatch($request->user()->id, $data['subnet'] ?? null);

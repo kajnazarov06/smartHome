@@ -33,12 +33,6 @@ class AlarmController extends Controller
 
     public function store(AlarmRequest $request, Device $device): JsonResponse
     {
-        abort_if(
-            $device->alarms()->count() >= config('smarthome.device.max_alarms'),
-            422,
-            'A device can store at most '.config('smarthome.device.max_alarms').' alarms.',
-        );
-
         $alarm = $this->alarms->create($device, $request->alarm());
 
         return AlarmResource::make($alarm)->response()->setStatusCode($this->writeStatus($alarm, 201));

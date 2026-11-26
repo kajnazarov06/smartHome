@@ -16,7 +16,7 @@ class SyncAlarmsCommand extends Command
     public function handle(): int
     {
         $devices = Device::query()
-            ->where('last_seen_at', '>', now()->subSeconds(config('smarthome.device.offline_after')))
+            ->online()
             ->unless($this->option('all'), fn ($query) => $query->whereHas(
                 'alarms',
                 fn ($alarms) => $alarms->withTrashed()->where('sync_status', SyncStatus::Pending),

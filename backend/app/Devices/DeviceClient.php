@@ -5,6 +5,7 @@ namespace App\Devices;
 use App\Devices\Exceptions\DeviceRequestException;
 use App\Devices\Exceptions\DeviceUnreachableException;
 use App\Devices\Exceptions\InvalidPairingCodeException;
+use App\Devices\Exceptions\PairingLockedException;
 use App\Models\Device;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as Http;
@@ -32,7 +33,11 @@ class DeviceClient
 
     public function startPairing(string $host): array
     {
-        return $this->send($host, null, 'post', '/api/pair/start');
+        try {
+            return $this->send($host, null, 'post', '/api/pair/start');
+        } catch (DeviceRequestException $e) {
+            throw $this->pairingLockout($e) ?? $e;
+        }
     }
 
     /** Exchanges the code shown on the display for a long-lived device token. */
@@ -44,7 +49,7 @@ class DeviceClient
             if (in_array($e->deviceStatus, [400, 401, 403, 422], true)) {
                 throw new InvalidPairingCodeException($e->body['attempts_left'] ?? null);
             }
-            throw $e;
+            throw $this->pairingLockout($e) ?? $e;
         }
 
         if (! is_string($body['token'] ?? null) || $body['token'] === '') {
@@ -180,6 +185,12 @@ class DeviceClient
     private function elapsedMs(int $startedAt): int
     {
         return (int) round((hrtime(true) - $startedAt) / 1_000_000);
+    }
+
+    /** On the pairing endpoints a 429 means "too many wrong codes" (5 tries / 5 min on the clock). */
+    private function pairingLockout(DeviceRequestException $e): ?PairingLockedException
+    {
+        return $e->deviceStatus === 429 ? new PairingLockedException($e->retryAfter()) : null;
     }
 
     private function unwrapAlarm(array $body): array

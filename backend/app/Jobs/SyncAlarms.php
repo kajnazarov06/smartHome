@@ -7,11 +7,11 @@ use App\Events\AlarmsUpdated;
 use App\Http\Resources\AlarmResource;
 use App\Models\Device;
 use App\Services\AlarmService;
+use App\Support\SafeBroadcast;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
  * Reconciles one device's alarms with the clock (see AlarmService). Dispatched when the clock comes
@@ -53,14 +53,10 @@ class SyncAlarms implements ShouldBeUniqueUntilProcessing, ShouldQueue
         }
 
         // Also after a failure: rows may have become `failed`.
-        try {
-            AlarmsUpdated::dispatch(
-                $device->user_id,
-                $device->id,
-                AlarmResource::collection($device->alarms()->get())->resolve(),
-            );
-        } catch (Throwable $e) {
-            Log::warning('Broadcast failed', ['event' => AlarmsUpdated::class, 'error' => $e->getMessage()]);
-        }
+        SafeBroadcast::dispatch(new AlarmsUpdated(
+            $device->user_id,
+            $device->id,
+            AlarmResource::collection($device->alarms()->get())->resolve(),
+        ));
     }
 }

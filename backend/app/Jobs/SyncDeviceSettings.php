@@ -6,11 +6,11 @@ use App\Devices\Exceptions\DeviceException;
 use App\Events\DeviceSettingsUpdated;
 use App\Models\Device;
 use App\Services\DeviceSettingsService;
+use App\Support\SafeBroadcast;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
  * Pushes one device's pending settings to the clock (see DeviceSettingsService). Dispatched when the
@@ -51,10 +51,6 @@ class SyncDeviceSettings implements ShouldBeUniqueUntilProcessing, ShouldQueue
             return; // still pending: nothing changed for the UI
         }
 
-        try {
-            DeviceSettingsUpdated::dispatch($device->refresh());
-        } catch (Throwable $e) {
-            Log::warning('Broadcast failed', ['event' => DeviceSettingsUpdated::class, 'error' => $e->getMessage()]);
-        }
+        SafeBroadcast::dispatch(new DeviceSettingsUpdated($device->refresh()));
     }
 }

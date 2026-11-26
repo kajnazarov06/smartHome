@@ -86,6 +86,7 @@ container: `docker run --rm -v "$PWD/backend":/app -w /app composer:2 php artisa
 | What to do with device messages (testable, no event loop) | `app/Devices/Listener/DeviceEventHandler.php` |
 | Offline-first alarms: save → push now → background sync (`SyncAlarms` job, `alarms:sync`) | `app/Services/AlarmService.php`, `app/Jobs/SyncAlarms.php` |
 | Offline-first settings/rename: same flow (`SyncDeviceSettings` job, `settings:sync`) | `app/Services/DeviceSettingsService.php`, `app/Jobs/SyncDeviceSettings.php` |
+| Per-device push lock shared by both services (web + worker) | `app/Devices/DeviceLock.php` |
 | History down-sampling (24 h → 5 min buckets, 7 d → 30 min) | `app/Services/ReadingHistory.php` |
 | Broadcast events (`users.{id}` private channel) | `app/Events/*`, `routes/channels.php` |
 | Routes | `routes/api.php` (API), `routes/console.php` (schedule) |
@@ -143,7 +144,7 @@ For `curl` testing, send `Origin: http://localhost` and handle the XSRF cookie, 
 
 Other users' devices return **404** (not 403). Device failures return `{message, code}` with `code` one of
 `device_unreachable` (503), `device_unauthorized` (502: stored token rejected), `device_rejected` (422),
-`device_not_found` (404), `pairing_locked` (429), `unsupported_device_type` (422), `device_error` (502). Devices include `type` and `type_label`.
+`device_not_found` (404), `pairing_locked` (429, pairing endpoints only), `device_rate_limited` (429, any other endpoint), `unsupported_device_type` (422), `device_error` (502). Devices include `type` and `type_label`.
 
 **Broadcasts** on `private-users.{userId}` (Echo: `Echo.private(`users.${id}`).listen('.device.state', …)`):
 `.device.state {device_id, state}`, `.device.status {device_id, online, last_seen_at}`,
@@ -231,7 +232,8 @@ weekdays; `tz` is an IANA name (the firmware maps it to a POSIX TZ string); the 
 - Use `ShouldBroadcastNow` for live device data (no queue latency). Only private channels, authorized in
   `routes/channels.php`.
 - Use a short `broadcastAs()` name and a small `broadcastWith()` payload: send what changed, not the model.
-- A broadcast failure must never break the action that caused it (`DeviceEventHandler::broadcast`).
+- A broadcast failure must never break the action that caused it: dispatch with `App\Support\SafeBroadcast::dispatch()`.
+- Events use the `BroadcastsToUser` trait (`users.{userId}` channel) instead of their own `broadcastOn()`.
 
 ### Testing
 

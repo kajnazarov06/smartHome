@@ -11,10 +11,13 @@ use Carbon\CarbonImmutable;
  */
 final readonly class DiscoveredDevice
 {
+    /** Assumed when a device doesn't announce a type (v1 firmware is always a clock). */
+    public const DEFAULT_TYPE = DeviceType::Clock->value;
+
     public function __construct(
         public string $id,
         public string $host,
-        public string $type = 'clock',
+        public string $type = self::DEFAULT_TYPE,
         public ?string $name = null,
         public ?string $fw = null,
         public bool $paired = false,
@@ -33,7 +36,7 @@ final readonly class DiscoveredDevice
         return new self(
             id: $info['id'],
             host: $host,
-            type: (string) ($info['type'] ?? 'clock'),
+            type: (string) ($info['type'] ?? self::DEFAULT_TYPE),
             name: $info['name'] ?? null,
             fw: isset($info['fw']) ? (string) $info['fw'] : null,
             paired: filter_var($info['paired'] ?? false, FILTER_VALIDATE_BOOL),
@@ -63,7 +66,7 @@ final readonly class DiscoveredDevice
         return new self(
             id: $data['id'],
             host: $data['host'],
-            type: $data['type'] ?? 'clock',
+            type: $data['type'] ?? self::DEFAULT_TYPE,
             name: $data['name'] ?? null,
             fw: $data['fw'] ?? null,
             paired: (bool) ($data['paired'] ?? false),

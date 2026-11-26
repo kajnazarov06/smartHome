@@ -27,18 +27,6 @@ class DeviceStateStore
         return $this->cache->get($this->key($deviceId));
     }
 
-    /** @param list<string> $deviceIds @return array<string, array|null> */
-    public function many(array $deviceIds): array
-    {
-        if ($deviceIds === []) {
-            return [];
-        }
-
-        $values = $this->cache->many(array_map($this->key(...), $deviceIds));
-
-        return array_combine($deviceIds, array_values($values));
-    }
-
     public function forget(string $deviceId): void
     {
         $this->cache->forget($this->key($deviceId));

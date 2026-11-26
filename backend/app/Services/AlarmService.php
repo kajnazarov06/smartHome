@@ -3,15 +3,15 @@
 namespace App\Services;
 
 use App\Devices\DeviceClient;
+use App\Devices\DeviceLock;
 use App\Devices\Exceptions\DeviceException;
 use App\Devices\Exceptions\DeviceRequestException;
 use App\Enums\SyncStatus;
 use App\Models\Alarm;
 use App\Models\Device;
 use Closure;
-use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -34,9 +34,6 @@ class AlarmService
 {
     /** Hardware-dependent fields passed through when present. */
     public const EXTRA_FIELDS = ['snooze_min', 'sound', 'volume'];
-
-    /** Seconds a request waits for a running sync before leaving its change to the background. */
-    private const REQUEST_LOCK_WAIT = 5;
 
     /** Upper bound on one sync holding the lock (11 alarms × 3 s timeout fits). */
     private const LOCK_TTL = 60;
@@ -119,30 +116,11 @@ class AlarmService
      */
     public function sync(Device $device, int $wait = 10): bool
     {
-        $lock = Cache::lock($this->lockKey($device), self::LOCK_TTL);
-
-        try {
-            $lock->block($wait);
-        } catch (LockTimeoutException) {
-            return false;
-        }
-
-        try {
+        return DeviceLock::run($this->lockKey($device), self::LOCK_TTL, $wait, function () use ($device) {
             $this->reconcile($device);
-        } finally {
-            $lock->release();
-        }
 
-        return true;
-    }
-
-    /** Whether the device has changes the clock hasn't confirmed. */
-    public function hasPending(Device $device): bool
-    {
-        return Alarm::withTrashed()
-            ->where('device_id', $device->id)
-            ->where('sync_status', SyncStatus::Pending)
-            ->exists();
+            return true;
+        });
     }
 
     private function reconcile(Device $device): void
@@ -235,10 +213,8 @@ class AlarmService
     {
         if ($device->isOnline()) {
             try {
-                Cache::lock($this->lockKey($device), self::LOCK_TTL)
-                    ->block(self::REQUEST_LOCK_WAIT, fn () => $this->push($device, $alarm));
-            } catch (LockTimeoutException) {
-                // A sync is running and will pick the change up, or the next one will.
+                // If a sync holds the lock, it (or the next one) picks the change up.
+                DeviceLock::run($this->lockKey($device), self::LOCK_TTL, DeviceLock::REQUEST_WAIT, fn () => $this->push($device, $alarm));
             } catch (DeviceException $e) {
                 if (! $e->isTransient()) {
                     $revert();
@@ -311,7 +287,7 @@ class AlarmService
     {
         $changed = Alarm::withTrashed()->whereKey($alarm->id)->where('revision', $alarm->revision)->update([
             'sync_status' => SyncStatus::Failed,
-            'sync_error' => json_encode(['code' => $e->errorCode(), 'message' => $e->getMessage()]),
+            'sync_error' => json_encode($e->toArray()),
             // A refused delete must become visible again, or the alarm would ring with no way to see it.
             'deleted_at' => null,
         ]);
@@ -329,7 +305,7 @@ class AlarmService
     // ---- Shapes ---------------------------------------------------------------------------------
 
     /** Coerces a device alarm into the canonical shape. */
-    public function normalize(array $alarm): array
+    private function normalize(array $alarm): array
     {
         $days = array_values(array_unique(array_map('intval', (array) ($alarm['days'] ?? []))));
         sort($days);
@@ -363,11 +339,11 @@ class AlarmService
         return ['id' => $alarm->device_alarm_id, ...$alarm->toDevicePayload()];
     }
 
+    /** Same time, days, enabled and label (hardware extras ignored), compared like followClock(). */
     private function sameContent(array $remote, Alarm $alarm): bool
     {
-        return $remote['time'] === $alarm->time
-            && $remote['days'] === array_values($alarm->days ?? [])
-            && $remote['enabled'] === $alarm->enabled
-            && $remote['label'] === $alarm->label;
+        $fields = Arr::except($this->normalizedFields($remote), 'extra');
+
+        return $fields == $alarm->only(array_keys($fields));
     }
 }

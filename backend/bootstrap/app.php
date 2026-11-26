@@ -1,8 +1,8 @@
 <?php
 
 use App\Devices\Exceptions\DeviceException;
-use App\Devices\Exceptions\DeviceRequestException;
 use App\Devices\Exceptions\InvalidPairingCodeException;
+use App\Devices\Exceptions\PairingLockedException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -30,18 +30,15 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Device failures become JSON errors with a stable machine-readable `code`.
         $exceptions->render(function (DeviceException $e) {
-            $body = ['message' => $e->getMessage(), 'code' => $e->errorCode()];
+            $body = $e->toArray();
             $headers = [];
 
             if ($e instanceof InvalidPairingCodeException && $e->attemptsLeft !== null) {
                 $body['attempts_left'] = $e->attemptsLeft;
             }
-            if ($e instanceof DeviceRequestException && $e->deviceStatus === 429) {
-                $body['code'] = 'pairing_locked';
-                if ($e->retryAfter() !== null) {
-                    $body['retry_after'] = $e->retryAfter();
-                    $headers['Retry-After'] = (string) $e->retryAfter();
-                }
+            if ($e instanceof PairingLockedException && $e->retryAfter !== null) {
+                $body['retry_after'] = $e->retryAfter;
+                $headers['Retry-After'] = (string) $e->retryAfter;
             }
 
             return response()->json($body, $e->status(), $headers);

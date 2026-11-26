@@ -109,18 +109,6 @@ class DiscoveryService
         return array_values(array_diff_key($list, array_flip($known)));
     }
 
-    public function find(string $id): ?DiscoveredDevice
-    {
-        return $this->all()[$id] ?? null;
-    }
-
-    public function forget(string $id): void
-    {
-        $list = $this->all();
-        unset($list[$id]);
-        $this->cache->forever(self::CACHE_KEY, array_map(fn (DiscoveredDevice $d) => $d->toArray(), array_values($list)));
-    }
-
     public function scannedAt(): ?string
     {
         return $this->cache->get(self::SCANNED_AT_KEY);

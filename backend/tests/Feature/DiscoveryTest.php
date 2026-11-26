@@ -52,6 +52,18 @@ class DiscoveryTest extends TestCase
         Queue::assertPushed(ScanNetwork::class, fn ($job) => $job->userId === $user->id && $job->subnet === '192.168.1.0/24');
     }
 
+    public function test_scan_rejects_subnets_the_prober_cannot_handle(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+
+        foreach (['192.168.0.0/16', 'not-a-cidr', '300.1.1.1/24'] as $subnet) {
+            $this->actingAs($user)->postJson('/api/discovery/scan', ['subnet' => $subnet])
+                ->assertJsonValidationErrors('subnet');
+        }
+        Queue::assertNothingPushed();
+    }
+
     public function test_add_by_ip(): void
     {
         Http::fake(['http://192.168.1.77/api/info' => Http::response(['api_version' => 1, 'id' => 'clock-77ab', 'type' => 'clock', 'paired' => false])]);

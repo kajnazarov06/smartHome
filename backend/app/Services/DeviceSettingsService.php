@@ -3,11 +3,10 @@
 namespace App\Services;
 
 use App\Devices\DeviceClient;
+use App\Devices\DeviceLock;
 use App\Devices\Exceptions\DeviceException;
 use App\Enums\SyncStatus;
 use App\Models\Device;
-use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -25,9 +24,6 @@ use Illuminate\Support\Facades\Log;
  */
 class DeviceSettingsService
 {
-    /** Seconds a request waits for a running push before leaving its change to the background. */
-    private const REQUEST_LOCK_WAIT = 5;
-
     private const LOCK_TTL = 30;
 
     public function __construct(private readonly DeviceClient $client) {}
@@ -47,10 +43,8 @@ class DeviceSettingsService
 
         if ($device->isOnline()) {
             try {
-                Cache::lock($this->lockKey($device), self::LOCK_TTL)
-                    ->block(self::REQUEST_LOCK_WAIT, fn () => $this->push($device));
-            } catch (LockTimeoutException) {
-                // A background push is running; the next one picks this change up.
+                // If a background push holds the lock, the next one picks this change up.
+                DeviceLock::run($this->lockKey($device), self::LOCK_TTL, DeviceLock::REQUEST_WAIT, fn () => $this->push($device));
             } catch (DeviceException $e) {
                 if (! $e->isTransient()) {
                     $device->forceFill($original)->save();
@@ -71,15 +65,7 @@ class DeviceSettingsService
      */
     public function sync(Device $device, int $wait = 10): bool
     {
-        $lock = Cache::lock($this->lockKey($device), self::LOCK_TTL);
-
-        try {
-            $lock->block($wait);
-        } catch (LockTimeoutException) {
-            return false;
-        }
-
-        try {
+        return DeviceLock::run($this->lockKey($device), self::LOCK_TTL, $wait, function () use ($device) {
             $device->refresh();
             if ($device->settings_sync_status !== SyncStatus::Pending) {
                 return false;
@@ -93,11 +79,9 @@ class DeviceSettingsService
                 }
                 $this->markFailed($device, $e);
             }
-        } finally {
-            $lock->release();
-        }
 
-        return true;
+            return true;
+        });
     }
 
     private function push(Device $device): void
@@ -116,7 +100,7 @@ class DeviceSettingsService
     {
         $changed = Device::query()->whereKey($device->id)->where('settings_revision', $device->settings_revision)->update([
             'settings_sync_status' => SyncStatus::Failed,
-            'settings_sync_error' => json_encode(['code' => $e->errorCode(), 'message' => $e->getMessage()]),
+            'settings_sync_error' => json_encode($e->toArray()),
         ]);
 
         if ($changed) {

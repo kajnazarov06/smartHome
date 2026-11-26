@@ -96,6 +96,16 @@ class DeviceTest extends TestCase
             ->assertJsonMissingPath('data.api_version');
     }
 
+    public function test_a_busy_clock_is_not_reported_as_a_pairing_lockout(): void
+    {
+        $device = Device::factory()->create(['last_ip' => '192.168.1.50']);
+        Http::fake(['http://192.168.1.50/api/state' => Http::response(['error' => 'busy'], 429)]);
+
+        $this->actingAs($device->user)->getJson("/api/devices/{$device->id}/state")
+            ->assertStatus(429)
+            ->assertJson(['code' => 'device_rate_limited']);
+    }
+
     public function test_remove_unpairs_the_device_then_deletes_the_record(): void
     {
         $device = Device::factory()->create(['last_ip' => '192.168.1.50', 'token' => 'tok']);
