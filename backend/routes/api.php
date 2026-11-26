@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
     Route::get('status', [AuthController::class, 'status']);
-    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:register');
     Route::post('login', [AuthController::class, 'login']);
 });
 
@@ -25,8 +25,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Discovery & pairing
     Route::get('discovery', [DiscoveryController::class, 'index']);
-    Route::post('discovery/scan', [DiscoveryController::class, 'scan'])->middleware('throttle:10,1');
-    Route::post('discovery/probe', [DiscoveryController::class, 'probe'])->middleware('throttle:30,1');
+    Route::post('discovery/scan', [DiscoveryController::class, 'scan'])->middleware('throttle:discovery_scan');
+    Route::post('discovery/probe', [DiscoveryController::class, 'probe'])->middleware('throttle:discovery_probe');
     Route::middleware('throttle:pairing')->group(function () {
         Route::post('pairing/start', [PairingController::class, 'start']);
         Route::post('pairing/confirm', [PairingController::class, 'confirm']);

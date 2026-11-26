@@ -8,6 +8,18 @@ return [
     */
     'registration' => env('SMARTHOME_REGISTRATION', 'open'),
 
+    /*
+    | Requests per minute. Login is per login name + IP; the others per user (or IP when signed out).
+    | Pairing sits on top of the clock's own 5-tries / 5-minute lockout.
+    */
+    'rate_limits' => [
+        'login' => (int) env('RATE_LIMIT_LOGIN', 5),
+        'register' => (int) env('RATE_LIMIT_REGISTER', 10),
+        'pairing' => (int) env('RATE_LIMIT_PAIRING', 10),
+        'discovery_scan' => (int) env('RATE_LIMIT_DISCOVERY_SCAN', 10),
+        'discovery_probe' => (int) env('RATE_LIMIT_DISCOVERY_PROBE', 30),
+    ],
+
     'device' => [
         // Major version of the device local API this backend speaks.
         'api_version' => (int) env('DEVICE_API_VERSION', 1),

@@ -12,7 +12,7 @@ class PairConfirmRequest extends FormRequest
         return [
             'host' => ['required', 'string', new LanHost],
             'code' => ['required', 'string', 'regex:/^\d{6}$/'],
-            'name' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'name' => ['sometimes', 'nullable', ...DeviceSettingsRequest::NAME_RULES],
         ];
     }
 }

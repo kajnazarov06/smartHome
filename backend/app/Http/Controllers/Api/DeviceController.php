@@ -6,7 +6,6 @@ use App\Devices\DeviceClient;
 use App\Devices\DeviceStateStore;
 use App\Devices\Exceptions\DeviceRequestException;
 use App\Devices\Exceptions\DeviceUnreachableException;
-use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DeviceRenameRequest;
 use App\Http\Requests\DeviceSettingsRequest;
@@ -64,7 +63,7 @@ class DeviceController extends Controller
     private function settingsResponse(Device $device): JsonResponse
     {
         return DeviceResource::make($device)->response()
-            ->setStatusCode($device->settings_sync_status === SyncStatus::Synced ? 200 : 202);
+            ->setStatusCode($device->settings_sync_status->httpStatus());
     }
 
     /**

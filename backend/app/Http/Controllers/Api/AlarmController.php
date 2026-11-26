@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\SyncStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AlarmRequest;
 use App\Http\Resources\AlarmResource;
@@ -35,23 +34,18 @@ class AlarmController extends Controller
     {
         $alarm = $this->alarms->create($device, $request->alarm());
 
-        return AlarmResource::make($alarm)->response()->setStatusCode($this->writeStatus($alarm, 201));
+        return AlarmResource::make($alarm)->response()->setStatusCode($alarm->sync_status->httpStatus(201));
     }
 
     public function update(AlarmRequest $request, Device $device, Alarm $alarm): JsonResponse
     {
         $alarm = $this->alarms->update($device, $alarm, $request->alarm());
 
-        return AlarmResource::make($alarm)->response()->setStatusCode($this->writeStatus($alarm, 200));
+        return AlarmResource::make($alarm)->response()->setStatusCode($alarm->sync_status->httpStatus());
     }
 
     public function destroy(Device $device, Alarm $alarm): Response
     {
         return $this->alarms->delete($device, $alarm) ? response()->noContent() : response()->noContent(202);
-    }
-
-    private function writeStatus(Alarm $alarm, int $synced): int
-    {
-        return $alarm->sync_status === SyncStatus::Synced ? $synced : 202;
     }
 }

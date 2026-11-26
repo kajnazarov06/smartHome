@@ -87,7 +87,7 @@ class AuthController extends Controller
 
     private function ensureNotRateLimited(LoginRequest $request): void
     {
-        if (! RateLimiter::tooManyAttempts($request->throttleKey(), 5)) {
+        if (! RateLimiter::tooManyAttempts($request->throttleKey(), config('smarthome.rate_limits.login'))) {
             return;
         }
 

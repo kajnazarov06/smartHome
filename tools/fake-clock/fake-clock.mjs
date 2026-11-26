@@ -19,6 +19,8 @@ const arg = (name, fallback) => {
 const PORT = Number(arg('port', process.env.PORT ?? 8090));
 const ID = arg('id', process.env.CLOCK_ID ?? 'clock-f4k3');
 const API_VERSION = 1;
+const MAX_PAIR_FAILURES = 5; // then pairing is locked for LOCKOUT_MS
+const LOCKOUT_MS = 5 * 60_000;
 
 const state = {
   name: `ClockStation-${ID.slice(-4).toUpperCase()}`,
@@ -43,6 +45,10 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 function send(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ api_version: API_VERSION, ...body }));
+}
+
+function lockedReply(res) {
+  return send(res, 429, { error: 'locked', retry_after: Math.ceil((state.lockedUntil - Date.now()) / 1000) });
 }
 
 function readJson(req) {
@@ -90,7 +96,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && path === '/api/pair/start') {
-    if (Date.now() < state.lockedUntil) return send(res, 429, { error: 'locked', retry_after: Math.ceil((state.lockedUntil - Date.now()) / 1000) });
+    if (Date.now() < state.lockedUntil) return lockedReply(res);
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     state.pairing = { code, expiresAt: Date.now() + 120_000 };
     log(`\n\n    PAIRING CODE: ${code}   (valid 120 s)\n`);
@@ -98,17 +104,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && path === '/api/pair/confirm') {
-    if (Date.now() < state.lockedUntil) return send(res, 429, { error: 'locked', retry_after: Math.ceil((state.lockedUntil - Date.now()) / 1000) });
+    if (Date.now() < state.lockedUntil) return lockedReply(res);
     const body = await readJson(req);
     const ok = state.pairing && Date.now() < state.pairing.expiresAt && body?.code === state.pairing.code;
     if (!ok) {
       state.failures++;
-      if (state.failures >= 5) {
+      if (state.failures >= MAX_PAIR_FAILURES) {
         state.failures = 0;
-        state.lockedUntil = Date.now() + 5 * 60_000;
-        return send(res, 429, { error: 'locked', retry_after: 300 });
+        state.lockedUntil = Date.now() + LOCKOUT_MS;
+        return lockedReply(res);
       }
-      return send(res, 401, { error: 'invalid code', attempts_left: 5 - state.failures });
+      return send(res, 401, { error: 'invalid code', attempts_left: MAX_PAIR_FAILURES - state.failures });
     }
     const token = crypto.randomBytes(32).toString('hex');
     state.tokenHash = sha256(token);
@@ -164,6 +170,10 @@ function frame(opcode, payload = Buffer.alloc(0)) {
   return Buffer.concat([header, payload]);
 }
 
+// A text frame with the contract's envelope (`api_version` on every message).
+const wsMessage = (obj) => frame(1, Buffer.from(JSON.stringify({ api_version: API_VERSION, ...obj })));
+const broadcast = (obj) => { const msg = wsMessage(obj); for (const sock of sockets) sock.write(msg); };
+
 server.on('upgrade', (req, socket) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname !== '/ws' || !authorized(url.searchParams.get('token'))) {
@@ -174,7 +184,7 @@ server.on('upgrade', (req, socket) => {
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
   sockets.add(socket);
   log('ws connected');
-  socket.write(frame(1, Buffer.from(JSON.stringify({ type: 'state', api_version: API_VERSION, ...snapshot() }))));
+  socket.write(wsMessage({ type: 'state', ...snapshot() }));
 
   let buf = Buffer.alloc(0);
   socket.on('data', (chunk) => {
@@ -206,8 +216,7 @@ setInterval(() => {
   const s = snapshot();
   if (Math.abs(s.temperature_c - last.t) >= 0.2 || Math.abs(s.humidity_pct - last.h) >= 1 || Date.now() - last.at >= 60_000) {
     last = { t: s.temperature_c, h: s.humidity_pct, at: Date.now() };
-    const msg = frame(1, Buffer.from(JSON.stringify({ type: 'state', api_version: API_VERSION, ...s })));
-    for (const sock of sockets) sock.write(msg);
+    broadcast({ type: 'state', ...s });
   }
 }, 2000);
 
@@ -220,8 +229,7 @@ setInterval(() => {
   for (const a of state.alarms) {
     if (a.enabled && a.time === hhmm && (a.days.length === 0 || a.days.includes(isoDay))) {
       log(`ALARM ${a.id} ringing (${a.label ?? ''})`);
-      const msg = frame(1, Buffer.from(JSON.stringify({ type: 'alarm_ringing', api_version: API_VERSION, id: a.id })));
-      for (const sock of sockets) sock.write(msg);
+      broadcast({ type: 'alarm_ringing', id: a.id });
     }
   }
 }, 1000);

@@ -26,9 +26,9 @@ class DeviceClient
     // ---- Unauthenticated calls (discovery & pairing) -------------------------------------------
 
     /** @return array{id:string,type:string,name?:string,fw?:string,mac?:string,paired?:bool,capabilities?:list<string>} */
-    public function info(string $host, ?float $timeout = null): array
+    public function info(string $host): array
     {
-        return $this->send($host, null, 'get', '/api/info', timeout: $timeout);
+        return $this->send($host, null, 'get', '/api/info');
     }
 
     public function startPairing(string $host): array
@@ -112,9 +112,9 @@ class DeviceClient
         return 'http://'.$hostPart.($port === 80 ? '' : ':'.$port);
     }
 
-    private function request(string $host, ?string $token, ?float $timeout): PendingRequest
+    private function request(string $host, ?string $token): PendingRequest
     {
-        $timeout ??= (float) config('smarthome.device.http_timeout');
+        $timeout = (float) config('smarthome.device.http_timeout');
 
         $request = $this->http
             ->baseUrl(self::baseUrl($host))
@@ -126,7 +126,7 @@ class DeviceClient
         return $token === null ? $request : $request->withToken($token);
     }
 
-    private function send(?string $host, ?string $token, string $method, string $path, array $data = [], ?float $timeout = null): array
+    private function send(?string $host, ?string $token, string $method, string $path, array $data = []): array
     {
         if ($host === null || $host === '') {
             throw DeviceUnreachableException::forHost('(unknown address)');
@@ -138,7 +138,7 @@ class DeviceClient
 
         try {
             /** @var Response $response */
-            $request = $this->request($host, $token, $timeout);
+            $request = $this->request($host, $token);
             $response = in_array($method, ['get', 'delete'], true)
                 ? $request->{$method}($path)
                 : $request->{$method}($path, $data);

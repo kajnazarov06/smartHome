@@ -13,4 +13,10 @@ enum SyncStatus: string
 
     /** The clock refused the change; it keeps its previous version until the user changes it again. */
     case Failed = 'failed';
+
+    /** HTTP status for a write: `$whenSynced` once the clock has it, otherwise 202 (saved, not on the clock yet). */
+    public function httpStatus(int $whenSynced = 200): int
+    {
+        return $this === self::Synced ? $whenSynced : 202;
+    }
 }

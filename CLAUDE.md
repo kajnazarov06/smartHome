@@ -257,7 +257,8 @@ weekdays; `tz` is an IANA name (the firmware maps it to a POSIX TZ string); the 
 - Device addresses from users are validated by `App\Rules\LanHost` (private/link-local IPs or `*.local` only), so
   the proxy can't be pointed at the internet.
 - Pairing needs physical presence (code on the display). The device enforces the 5 tries / 5 min lockout; the
-  backend adds `throttle:pairing` (10/min/user) and throttles login (5/min per login + IP).
+  backend adds `throttle:pairing` (10/min/user) and throttles login (5/min per login + IP). All API rate
+  limits live in `config/smarthome.php` `rate_limits` (named limiters in `AppServiceProvider`).
 - Local traffic is plain HTTP on a trusted LAN in v1. Revisit TLS or signed requests before adding remote access.
 
 ### Frontend (React + Vite; to be built in `frontend/`)

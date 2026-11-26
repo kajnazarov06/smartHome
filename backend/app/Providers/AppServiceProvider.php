@@ -20,7 +20,10 @@ class AppServiceProvider extends ServiceProvider
         // Catch lazy loading, silently discarded attributes and missing attributes during development.
         Model::shouldBeStrict(! $this->app->isProduction());
 
-        // Backend-side guard on top of the device's own 5-tries / 5-minute pairing lockout.
-        RateLimiter::for('pairing', fn (Request $request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+        // Named limiters for `throttle:<name>` (limits in config/smarthome.php `rate_limits`).
+        foreach (['register', 'pairing', 'discovery_scan', 'discovery_probe'] as $name) {
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute(config("smarthome.rate_limits.{$name}"))
+                ->by($request->user()?->id ?: $request->ip()));
+        }
     }
 }

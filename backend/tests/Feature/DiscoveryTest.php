@@ -64,6 +64,16 @@ class DiscoveryTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_scan_rate_limit_comes_from_config(): void
+    {
+        Queue::fake();
+        config(['smarthome.rate_limits.discovery_scan' => 1]);
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/discovery/scan')->assertAccepted();
+        $this->actingAs($user)->postJson('/api/discovery/scan')->assertTooManyRequests();
+    }
+
     public function test_add_by_ip(): void
     {
         Http::fake(['http://192.168.1.77/api/info' => Http::response(['api_version' => 1, 'id' => 'clock-77ab', 'type' => 'clock', 'paired' => false])]);
