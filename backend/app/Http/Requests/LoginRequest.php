@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
@@ -18,7 +20,7 @@ class LoginRequest extends FormRequest
     /** @return array{email?: string, username?: string, password: string} */
     public function credentials(): array
     {
-        $login = trim($this->string('login'));
+        $login = $this->string('login')->trim()->value();
         $field = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
 
         return [$field => $login, 'password' => (string) $this->input('password')];
@@ -26,6 +28,6 @@ class LoginRequest extends FormRequest
 
     public function throttleKey(): string
     {
-        return mb_strtolower(trim($this->string('login'))).'|'.$this->ip();
+        return $this->string('login')->trim()->lower()->value().'|'.$this->ip();
     }
 }

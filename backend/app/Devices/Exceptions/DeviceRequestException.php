@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Devices\Exceptions;
 
 /** The device answered with a non-2xx status. */

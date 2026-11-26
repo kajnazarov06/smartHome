@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Devices\Exceptions;
 
 /** The device reports a `type` that has no App\Enums\DeviceType case. */

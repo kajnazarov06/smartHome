@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Enums;
 
 /** Whether the clock has accepted a user change (an alarm, or a device's settings) as stored in the database. */

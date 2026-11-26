@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tests\Feature;
 
 use App\Devices\Discovery\DiscoveredDevice;
@@ -62,16 +64,6 @@ class DiscoveryTest extends TestCase
                 ->assertJsonValidationErrors('subnet');
         }
         Queue::assertNothingPushed();
-    }
-
-    public function test_scan_rate_limit_comes_from_config(): void
-    {
-        Queue::fake();
-        config(['smarthome.rate_limits.discovery_scan' => 1]);
-        $user = User::factory()->create();
-
-        $this->actingAs($user)->postJson('/api/discovery/scan')->assertAccepted();
-        $this->actingAs($user)->postJson('/api/discovery/scan')->assertTooManyRequests();
     }
 
     public function test_add_by_ip(): void

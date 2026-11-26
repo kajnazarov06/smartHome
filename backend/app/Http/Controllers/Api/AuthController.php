@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
@@ -87,7 +89,7 @@ class AuthController extends Controller
 
     private function ensureNotRateLimited(LoginRequest $request): void
     {
-        if (! RateLimiter::tooManyAttempts($request->throttleKey(), config('smarthome.rate_limits.login'))) {
+        if (! RateLimiter::tooManyAttempts($request->throttleKey(), (int) config('smarthome.rate_limits.login', 5))) {
             return;
         }
 

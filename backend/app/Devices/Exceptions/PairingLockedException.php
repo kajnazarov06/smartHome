@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Devices\Exceptions;
 
 /** The clock refuses pairing for a while after too many wrong codes (HTTP 429 on /api/pair/*). */

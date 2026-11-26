@@ -63,7 +63,7 @@ container: `docker run --rm -v "$PWD/backend":/app -w /app composer:2 php artisa
 | --- | --- |
 | `php artisan test` | Full suite (SQLite in memory; `phpunit.xml`). Must stay green |
 | `php artisan test --filter=PairingTest` | One test class or method |
-| `vendor/bin/pint` | Code style (Laravel preset). Run before committing |
+| `vendor/bin/pint` | Code style (Laravel preset + `declare_strict_types`, `pint.json`). Run before committing; `--test` to check only |
 | `php artisan devices:discover [--subnet=192.168.1.0/24] [--watch]` | Scan the LAN; refreshes paired devices' IPs |
 | `php artisan devices:listen` | Long-running device listener (runs under supervisord in `worker`) |
 | `php artisan model:prune --model="App\Models\Reading"` | History retention (scheduled daily) |
@@ -196,6 +196,11 @@ weekdays; `tz` is an IANA name (the firmware maps it to a POSIX TZ string); the 
 
 ### PHP 8.3+ / Laravel 13
 
+- **Strict types everywhere.** Every PHP file starts with `declare(strict_types=1);` (app, config, routes,
+  database, tests, bootstrap). `pint.json` enforces it, so `vendor/bin/pint` adds it to new files. Never coerce
+  implicitly: cast explicitly at the edges (`(int) config(...)`, `(string) $request->input(...)`), use
+  `$request->string('x')->value()` (a `Stringable` is not a `string`) and `$request->integer()` / `boolean()`.
+  Untrusted device JSON can carry any type: cast or validate it before passing it to typed code.
 - Model fixed value sets as PHP backed enums in `app/Enums` with an Eloquent cast, stored in string columns (not DB `ENUM`s,
   which need a migration per new value and behave differently across SQLite/PostgreSQL/MySQL). Use `tryFrom()` on
   untrusted input (device responses) and fail with a typed exception; never let `from()` throw a raw `ValueError`.

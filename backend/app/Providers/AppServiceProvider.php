@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
@@ -22,7 +24,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Named limiters for `throttle:<name>` (limits in config/smarthome.php `rate_limits`).
         foreach (['register', 'pairing', 'discovery_scan', 'discovery_probe'] as $name) {
-            RateLimiter::for($name, fn (Request $request) => Limit::perMinute(config("smarthome.rate_limits.{$name}"))
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute((int) config("smarthome.rate_limits.{$name}", 10))
                 ->by($request->user()?->id ?: $request->ip()));
         }
     }

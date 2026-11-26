@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Devices\Exceptions\DeviceException;
 use App\Devices\Exceptions\InvalidPairingCodeException;
 use App\Devices\Exceptions\PairingLockedException;

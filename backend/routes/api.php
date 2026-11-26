@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Http\Controllers\Api\AlarmController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DeviceController;
